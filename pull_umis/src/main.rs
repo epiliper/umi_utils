@@ -1,9 +1,9 @@
 use bam::{BamReader, Record};
+use clap::Parser;
+use polars::functions::concat_df_horizontal;
+use polars::prelude::*;
 use std::fs::File;
 use std::path::Path;
-use polars::prelude::*;
-use polars::functions::concat_df_horizontal;
-use clap::Parser;
 
 use indexmap::IndexMap;
 
@@ -48,16 +48,11 @@ pub fn pull_umi(read: &Record, store: &mut IndexMap<i32, Vec<String>>, separator
 }
 
 pub fn write_tsv(store: IndexMap<i32, Vec<String>>, outfile: &Path) {
-
     let mut file = File::create(outfile).expect("Could not create file!");
-
     let mut dfs: Vec<DataFrame> = Vec::new();
 
     for (pos, umis) in store {
-
-        dfs.push(
-            DataFrame::new(vec![Series::new(&pos.to_string(), umis)]).unwrap(),
-        );
+        dfs.push(DataFrame::new(vec![Series::new(&pos.to_string(), umis)]).unwrap());
     }
 
     let mut new_report = concat_df_horizontal(&dfs).unwrap();
@@ -67,7 +62,6 @@ pub fn write_tsv(store: IndexMap<i32, Vec<String>>, outfile: &Path) {
         .n_threads(8)
         .finish(&mut new_report)
         .unwrap();
-
 }
 
 #[derive(Parser, Debug)]
