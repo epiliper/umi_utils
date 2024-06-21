@@ -3,12 +3,15 @@ use clap::Parser;
 use polars::frame::DataFrame;
 use polars::functions::concat_df_horizontal;
 use polars::prelude::*;
+use rand::rngs::StdRng;
 use rayon::prelude::*;
 use std::fs::File;
 use std::path::Path;
 use strsim::hamming;
 use std::sync::{Mutex, Arc};
 
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
 
 use indexmap::IndexMap;
 
@@ -44,7 +47,7 @@ fn main() {
     }
 
     // write_umis(umis, &outfile, sample_size);
-    write_edit_distance(umis, &outfile);
+    write_edit_distance(umis, &outfile, sample_size);
 }
 
 fn get_umi(record: &Record, separator: &String) -> String {
@@ -108,18 +111,21 @@ pub fn write_umis(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_
 pub fn write_edit_distance(
     mut store: IndexMap<i32, Vec<String>>,
     outfile: &Path,
-    // sample_size: usize,
+    sample_size: usize,
 ) {
+
+
     let mut file = File::create(outfile).expect("Could not create file!");
     let mut dfs: Arc<Mutex<Vec<DataFrame>>> = Arc::new(Mutex::new(Vec::new()));
 
     store.par_drain(0..).for_each(|(pos, umi_list)| {
-
+        let mut rng = StdRng::seed_from_u64(5);
         let mut edits: Vec<usize> = Vec::new();
+        let sample = umi_list.choose_multiple(&mut rng, sample_size).collect::<Vec<&String>>();
 
         let mut i = 0;
-        for umi in &umi_list {
-            for neighbor in &umi_list[i+1..] {
+        for umi in &sample {
+            for neighbor in &sample[i+1..] {
                 edits.push(hamming(&umi, neighbor).unwrap())
             }
             i += 1;
