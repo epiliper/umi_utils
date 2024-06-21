@@ -47,12 +47,16 @@ pub fn pull_umi(read: &Record, store: &mut IndexMap<i32, Vec<String>>, separator
     }
 }
 
-pub fn write_tsv(store: IndexMap<i32, Vec<String>>, outfile: &Path) {
+pub fn write_tsv(mut store: IndexMap<i32, Vec<String>>, outfile: &Path) {
     let mut file = File::create(outfile).expect("Could not create file!");
     let mut dfs: Vec<DataFrame> = Vec::new();
 
-    for (pos, umis) in store {
-        dfs.push(DataFrame::new(vec![Series::new(&pos.to_string(), umis)]).unwrap());
+    for (pos, umis) in store.drain(0..) {
+        dfs.push(
+            DataFrame::new(vec![Series::new(&pos.to_string(), umis)]).unwrap()
+            .drop_nulls::<String>(None).unwrap() // This step saves ~50% file size, makes columns
+                                                 // disitinct lengths
+            );
     }
 
     let mut new_report = concat_df_horizontal(&dfs).unwrap();
