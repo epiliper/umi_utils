@@ -9,4 +9,4 @@ edition = "2021"
 bam = "0.1.4"
 clap = {version = "4.5.4", features = ["derive"]}
 indexmap = "2.2.6"
-polars = {version = "x", features = ["csv"]}
+polars = {version = "x", features = ["csv", "lazy"]}

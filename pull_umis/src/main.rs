@@ -1,15 +1,31 @@
 use bam::{BamReader, Record};
 use clap::Parser;
 use polars::functions::concat_df_horizontal;
+use polars::frame::DataFrame;
 use polars::prelude::*;
 use std::fs::File;
 use std::path::Path;
 
 use indexmap::IndexMap;
 
+// const sample_size: usize = 1000;
+
+#[derive(Parser, Debug)]
+#[command(term_width = 0)]
+struct Args {
+    file: String,
+    #[arg(long = "sep")]
+    separator: String,
+
+    #[arg(long = "sample")]
+    sample_size: usize,
+    
+}
+
 fn main() {
     let args = Args::parse();
     let input = args.file;
+    let sample_size = args.sample_size;
 
     let bam_file = BamReader::from_path(&input, 8).unwrap();
 
@@ -24,7 +40,7 @@ fn main() {
         pull_umi(read, &mut umis, &args.separator)
     }
 
-    write_tsv(umis, &outfile);
+    write_tsv(umis, &outfile, sample_size);
 }
 
 fn get_umi(record: &Record, separator: &String) -> String {
@@ -47,15 +63,29 @@ pub fn pull_umi(read: &Record, store: &mut IndexMap<i32, Vec<String>>, separator
     }
 }
 
-pub fn write_tsv(mut store: IndexMap<i32, Vec<String>>, outfile: &Path) {
+pub fn subsample(mut df: DataFrame, sample_size: usize) -> DataFrame {
+
+    let col = &df.get_columns()[0];
+    let len = col.len();
+
+    if len >= sample_size {
+        df = df.sample_n_literal(sample_size, false, false, Some(0)).unwrap();
+        return df
+    }
+    return df
+}
+
+pub fn write_tsv(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_size: usize) {
     let mut file = File::create(outfile).expect("Could not create file!");
     let mut dfs: Vec<DataFrame> = Vec::new();
 
     for (pos, umis) in store.drain(0..) {
         dfs.push(
+            subsample(
             DataFrame::new(vec![Series::new(&pos.to_string(), umis)]).unwrap()
-            .drop_nulls::<String>(None).unwrap() // This step saves ~50% file size, makes columns
-                                                 // disitinct lengths
+            .drop_nulls::<String>(None).unwrap(),
+            sample_size// This step saves ~50% file size, makes columns
+            )                            // disitinct lengths
             );
     }
 
@@ -66,12 +96,4 @@ pub fn write_tsv(mut store: IndexMap<i32, Vec<String>>, outfile: &Path) {
         .n_threads(8)
         .finish(&mut new_report)
         .unwrap();
-}
-
-#[derive(Parser, Debug)]
-#[command(term_width = 0)]
-struct Args {
-    file: String,
-    #[arg(short = 's')]
-    separator: String,
 }
