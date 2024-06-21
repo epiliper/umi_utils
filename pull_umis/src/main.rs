@@ -1,14 +1,18 @@
 use bam::{BamReader, Record};
 use clap::Parser;
-use polars::functions::concat_df_horizontal;
 use polars::frame::DataFrame;
+use polars::functions::concat_df_horizontal;
 use polars::prelude::*;
+use rayon::prelude::*;
 use std::fs::File;
 use std::path::Path;
+use strsim::hamming;
+use std::sync::{Mutex, Arc};
+
 
 use indexmap::IndexMap;
 
-// const sample_size: usize = 1000;
+//  const sample_size: usize = 1000;
 
 #[derive(Parser, Debug)]
 #[command(term_width = 0)]
@@ -19,7 +23,6 @@ struct Args {
 
     #[arg(long = "sample")]
     sample_size: usize,
-    
 }
 
 fn main() {
@@ -40,7 +43,8 @@ fn main() {
         pull_umi(read, &mut umis, &args.separator)
     }
 
-    write_tsv(umis, &outfile, sample_size);
+    // write_umis(umis, &outfile, sample_size);
+    write_edit_distance(umis, &outfile);
 }
 
 fn get_umi(record: &Record, separator: &String) -> String {
@@ -64,29 +68,32 @@ pub fn pull_umi(read: &Record, store: &mut IndexMap<i32, Vec<String>>, separator
 }
 
 pub fn subsample(mut df: DataFrame, sample_size: usize) -> DataFrame {
-
     let col = &df.get_columns()[0];
     let len = col.len();
 
     if len >= sample_size {
-        df = df.sample_n_literal(sample_size, false, false, Some(0)).unwrap();
-        return df
+        df = df
+            .sample_n_literal(sample_size, false, false, Some(0))
+            .unwrap();
+        return df;
     }
-    return df
+    return df;
 }
 
-pub fn write_tsv(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_size: usize) {
+pub fn write_umis(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_size: usize) {
     let mut file = File::create(outfile).expect("Could not create file!");
     let mut dfs: Vec<DataFrame> = Vec::new();
 
     for (pos, umis) in store.drain(0..) {
         dfs.push(
             subsample(
-            DataFrame::new(vec![Series::new(&pos.to_string(), umis)]).unwrap()
-            .drop_nulls::<String>(None).unwrap(),
-            sample_size// This step saves ~50% file size, makes columns
-            )                            // disitinct lengths
-            );
+                DataFrame::new(vec![Series::new(&pos.to_string(), umis)])
+                    .unwrap()
+                    .drop_nulls::<String>(None)
+                    .unwrap(),
+                sample_size, // This step saves ~50% file size, makes columns
+            ), // disitinct lengths
+        );
     }
 
     let mut new_report = concat_df_horizontal(&dfs).unwrap();
@@ -96,4 +103,46 @@ pub fn write_tsv(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_s
         .n_threads(8)
         .finish(&mut new_report)
         .unwrap();
+}
+
+pub fn write_edit_distance(
+    mut store: IndexMap<i32, Vec<String>>,
+    outfile: &Path,
+    // sample_size: usize,
+) {
+    let mut file = File::create(outfile).expect("Could not create file!");
+    let mut dfs: Arc<Mutex<Vec<DataFrame>>> = Arc::new(Mutex::new(Vec::new()));
+
+    store.par_drain(0..).for_each(|(pos, umi_list)| {
+
+        let mut edits: Vec<usize> = Vec::new();
+
+        let mut i = 0;
+        for umi in &umi_list {
+            for neighbor in &umi_list[i+1..] {
+                edits.push(hamming(&umi, neighbor).unwrap())
+            }
+            i += 1;
+        }
+        if !edits.is_empty() {
+        let df = DataFrame::new(
+            vec![Series::new(&pos.to_string(), [mean(edits) as f32])]
+        ).unwrap();
+
+        dfs.lock().unwrap().push(df);
+        }
+    });
+
+    let mut new_report = concat_df_horizontal(&dfs.lock().unwrap()).unwrap();
+    new_report.align_chunks();
+
+    CsvWriter::new(&mut file)
+        .n_threads(8)
+        .finish(&mut new_report)
+        .unwrap();
+}
+
+fn mean(list: Vec<usize>) -> f32 {
+
+    return list.iter().sum::<usize>() as f32 / list.len() as f32
 }
