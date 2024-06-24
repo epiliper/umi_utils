@@ -1,5 +1,5 @@
 use bam::{BamReader, Record};
-use clap::Parser;
+use clap::{Parser, Subcommand, ValueEnum};
 use polars::frame::DataFrame;
 use polars::functions::concat_df_horizontal;
 use polars::prelude::*;
@@ -15,7 +15,12 @@ use rand::SeedableRng;
 
 use indexmap::IndexMap;
 
-//  const sample_size: usize = 1000;
+#[derive(ValueEnum, Debug, Clone)]
+enum Output {
+    UMIs,
+    Distribution,
+    Mean,
+}
 
 #[derive(Parser, Debug)]
 #[command(term_width = 0)]
@@ -26,6 +31,20 @@ struct Args {
 
     #[arg(long = "sample")]
     sample_size: usize,
+
+    #[arg(long = "out")]
+    output: Output,
+}
+
+pub fn get_dist(edits: &mut Vec<usize>) -> IndexMap<usize, i32> {
+    let mut dist: IndexMap<usize, i32> = IndexMap::new();
+
+    edits.drain(0..).for_each(|edit| {
+        dist.entry(edit as usize).or_insert(0);
+
+        *dist.get_mut(&edit).unwrap() += 1;
+    });
+    return dist;
 }
 
 fn main() {
@@ -46,8 +65,16 @@ fn main() {
         pull_umi(read, &mut umis, &args.separator)
     }
 
+    let process: fn(IndexMap<i32, Vec<String>>, &Path, usize);
+
+    let process = match args.output {
+        Output::UMIs => write_umis,
+        Output::Mean => write_means,
+        Output::Distribution => write_dist,
+    };
+
     // write_umis(umis, &outfile, sample_size);
-    write_edit_distance(umis, &outfile, sample_size);
+    process(umis, &outfile, sample_size);
 }
 
 fn get_umi(record: &Record, separator: &String) -> String {
@@ -135,17 +162,13 @@ pub fn write_means(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample
     });
 }
 
-pub fn write_edit_distance(
-    mut store: IndexMap<i32, Vec<String>>,
-    outfile: &Path,
-    sample_size: usize,
-) {
+pub fn write_dist(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_size: usize) {
     let mut file = File::create(outfile).expect("Could not create file!");
-    let mut dfs: Arc<Mutex<Vec<DataFrame>>> = Arc::new(Mutex::new(Vec::new()));
+    let dfs: Arc<Mutex<Vec<DataFrame>>> = Arc::new(Mutex::new(Vec::new()));
 
     store.par_drain(0..).for_each(|(pos, umi_list)| {
         let mut rng = StdRng::seed_from_u64(5);
-        let mut edits: Vec<i32> = Vec::new();
+        let mut edits: Vec<usize> = Vec::new();
         let sample = umi_list
             .choose_multiple(&mut rng, sample_size)
             .collect::<Vec<&String>>();
@@ -153,14 +176,33 @@ pub fn write_edit_distance(
         let mut i = 0;
         for umi in &sample {
             for neighbor in &sample[i + 1..] {
-                edits.push(hamming(&umi, neighbor).unwrap() as i32)
+                edits.push(hamming(&umi, neighbor).unwrap())
             }
             i += 1;
         }
+
+        let mut df = DataFrame::default();
+        let _ = df.with_column(Series::new("edit", (0..13).collect::<Vec<i32>>()));
+
+        let mut edit_col = (0..13).map(|_x| None).collect::<Vec<Option<i32>>>();
+
         if !edits.is_empty() {
-            let df = DataFrame::new(vec![Series::new(&pos.to_string(), edits)]).unwrap();
+            get_dist(&mut edits).drain(0..).for_each(|(edit, freq)| {
+                edit_col[edit] = Some(freq);
+            });
+
+            let _ = df.with_column(Series::new(&pos.to_string(), edit_col));
 
             dfs.lock().unwrap().push(df);
+        };
+    });
+
+    let mut first = true;
+    dfs.lock().unwrap().iter_mut().for_each(|df| {
+        if first {
+            first = false;
+        } else {
+            let _ = df.drop_in_place("edit");
         }
     });
 
