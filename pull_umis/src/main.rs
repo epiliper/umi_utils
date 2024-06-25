@@ -1,5 +1,5 @@
 use bam::{BamReader, Record};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, ValueEnum};
 use polars::frame::DataFrame;
 use polars::functions::concat_df_horizontal;
 use polars::prelude::*;
@@ -17,8 +17,8 @@ use indexmap::IndexMap;
 
 #[derive(ValueEnum, Debug, Clone)]
 enum Output {
-    UMIs,
-    Distribution,
+    Barcode,
+    Dist,
     Mean,
 }
 
@@ -32,7 +32,7 @@ struct Args {
     #[arg(long = "sample")]
     sample_size: usize,
 
-    #[arg(long = "out")]
+    #[arg(long = "stat")]
     output: Output,
 }
 
@@ -65,12 +65,10 @@ fn main() {
         pull_umi(read, &mut umis, &args.separator)
     }
 
-    let process: fn(IndexMap<i32, Vec<String>>, &Path, usize);
-
     let process = match args.output {
-        Output::UMIs => write_umis,
+        Output::Barcode => write_umis,
         Output::Mean => write_means,
-        Output::Distribution => write_dist,
+        Output::Dist => write_dist,
     };
 
     // write_umis(umis, &outfile, sample_size);
@@ -110,6 +108,17 @@ pub fn subsample(mut df: DataFrame, sample_size: usize) -> DataFrame {
     return df;
 }
 
+pub fn write_report(dfs: Vec<DataFrame>, outfile: &Path) {
+    let mut file = File::create(outfile).expect("Could not create file!");
+    let mut new_report = concat_df_horizontal(&dfs).unwrap();
+    new_report.align_chunks();
+
+    CsvWriter::new(&mut file)
+        .n_threads(8)
+        .finish(&mut new_report)
+        .unwrap();
+}
+
 pub fn write_umis(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_size: usize) {
     let mut file = File::create(outfile).expect("Could not create file!");
     let mut dfs: Vec<DataFrame> = Vec::new();
@@ -126,13 +135,7 @@ pub fn write_umis(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_
         );
     }
 
-    let mut new_report = concat_df_horizontal(&dfs).unwrap();
-    new_report.align_chunks();
-
-    CsvWriter::new(&mut file)
-        .n_threads(8)
-        .finish(&mut new_report)
-        .unwrap();
+    write_report(dfs, outfile);
 }
 
 pub fn write_means(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_size: usize) {
@@ -160,6 +163,10 @@ pub fn write_means(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample
             dfs.lock().unwrap().push(df);
         }
     });
+
+    let dfs = Arc::try_unwrap(dfs).unwrap().into_inner().unwrap();
+
+    write_report(dfs, outfile);
 }
 
 pub fn write_dist(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_size: usize) {
@@ -206,13 +213,9 @@ pub fn write_dist(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sample_
         }
     });
 
-    let mut new_report = concat_df_horizontal(&dfs.lock().unwrap()).unwrap();
-    new_report.align_chunks();
+    let dfs = Arc::try_unwrap(dfs).unwrap().into_inner().unwrap();
 
-    CsvWriter::new(&mut file)
-        .n_threads(8)
-        .finish(&mut new_report)
-        .unwrap();
+    write_report(dfs, outfile);
 }
 
 fn mean(list: Vec<usize>) -> f32 {
