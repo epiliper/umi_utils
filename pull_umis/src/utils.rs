@@ -6,6 +6,7 @@ use polars::prelude::*;
 use std::fs::File;
 use std::path::Path;
 
+// count the number of comparisons with edit distance of 0, 1, 2, etc.
 pub fn get_dist(edits: &mut Vec<usize>) -> IndexMap<usize, i32> {
     let mut dist: IndexMap<usize, i32> = IndexMap::new();
 
@@ -17,11 +18,13 @@ pub fn get_dist(edits: &mut Vec<usize>) -> IndexMap<usize, i32> {
     return dist;
 }
 
+// retrieve UMI from read record
 fn get_umi(record: &Record, separator: &String) -> String {
     let umi = String::from_utf8(record.name().to_vec());
     umi.unwrap().split(separator).last().unwrap().to_string()
 }
 
+// store UMI by position of associated read
 pub fn pull_umi(read: &Record, store: &mut IndexMap<i32, Vec<String>>, separator: &String) {
     // if read is reverse to reference, group it by its last aligned base to the reference
     if read.flag().is_mapped() && read.flag().is_reverse_strand() {
@@ -37,6 +40,8 @@ pub fn pull_umi(read: &Record, store: &mut IndexMap<i32, Vec<String>>, separator
     }
 }
 
+// use only a subset of UMIs for downstream analysis, useful when working with high read depth
+// recommended --sample value for BAM files >1GB: 5000
 pub fn subsample(mut df: DataFrame, sample_size: usize) -> DataFrame {
     let col = &df.get_columns()[0];
     let len = col.len();

@@ -1,25 +1,12 @@
-use bam::{BamReader, Record};
+use bam::BamReader;
 use clap::{Parser, ValueEnum};
-use polars::frame::DataFrame;
-use polars::functions::concat_df_horizontal;
-use polars::prelude::*;
-use rand::rngs::StdRng;
-use rayon::prelude::*;
 use std::fs::File;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
-use strsim::hamming;
-
 mod pickers;
 use pickers::*;
-
 mod utils;
-use utils::*;
-
-use rand::seq::SliceRandom;
-use rand::SeedableRng;
-
 use indexmap::IndexMap;
+use utils::*;
 
 #[derive(ValueEnum, Debug, Clone)]
 enum Output {
@@ -66,6 +53,5 @@ fn main() {
         Output::Dist => extract_dist,
     };
 
-    // write_umis(umis, &outfile, sample_size);
     process(umis, &outfile, sample_size);
 }
