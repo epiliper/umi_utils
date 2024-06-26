@@ -46,6 +46,10 @@ pub fn subsample(mut df: DataFrame, sample_size: usize) -> DataFrame {
     let col = &df.get_columns()[0];
     let len = col.len();
 
+    if sample_size == 0 {
+        return df;
+    }
+
     if len >= sample_size {
         df = df
             .sample_n_literal(sample_size, false, false, Some(0))

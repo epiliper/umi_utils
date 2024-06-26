@@ -22,7 +22,7 @@ struct Args {
     #[arg(long = "sep")]
     separator: String,
 
-    #[arg(long = "sample")]
+    #[arg(long = "sample", default_value_t = 0)]
     sample_size: usize,
 
     #[arg(long = "stat")]

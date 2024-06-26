@@ -45,9 +45,17 @@ pub fn extract_means(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, samp
     store.par_drain(0..).for_each(|(pos, umi_list)| {
         let mut rng = StdRng::seed_from_u64(5);
         let mut edits: Vec<usize> = Vec::new();
-        let sample = umi_list
-            .choose_multiple(&mut rng, sample_size)
-            .collect::<Vec<&String>>();
+
+        let sample: Vec<&String>;
+
+        match sample_size {
+            0 => sample = umi_list.iter().collect::<Vec<&String>>(),
+            _ => {
+                sample = umi_list
+                    .choose_multiple(&mut rng, sample_size)
+                    .collect::<Vec<&String>>();
+            }
+        }
 
         let mut i = 0;
         for umi in &sample {
@@ -82,9 +90,17 @@ pub fn extract_dist(mut store: IndexMap<i32, Vec<String>>, outfile: &Path, sampl
     store.par_drain(0..).for_each(|(pos, umi_list)| {
         let mut rng = StdRng::seed_from_u64(5);
         let mut edits: Vec<usize> = Vec::new();
-        let sample = umi_list
-            .choose_multiple(&mut rng, sample_size)
-            .collect::<Vec<&String>>();
+
+        let sample: Vec<&String>;
+
+        match sample_size {
+            0 => sample = umi_list.iter().collect::<Vec<&String>>(),
+            _ => {
+                sample = umi_list
+                    .choose_multiple(&mut rng, sample_size)
+                    .collect::<Vec<&String>>();
+            }
+        }
 
         let mut i = 0;
         for umi in &sample {
