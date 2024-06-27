@@ -1,9 +1,10 @@
-use bam::{BamReader, Record};
+use bam::Record;
 use indexmap::IndexMap;
 use polars::frame::DataFrame;
 use polars::functions::concat_df_horizontal;
 use polars::prelude::*;
 use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 // count the number of comparisons with edit distance of 0, 1, 2, etc.
@@ -40,6 +41,15 @@ pub fn pull_umi(read: &Record, store: &mut IndexMap<i32, Vec<String>>, separator
     }
 }
 
+pub fn pull_umis_txt(txt: &Path, store: &mut IndexMap<i32, Vec<String>>) {
+    store.entry(1).or_insert(Vec::new());
+
+    let file = File::open(txt).expect("unable to open txt file!");
+    BufReader::new(file)
+        .lines()
+        .for_each(|line| store.get_mut(&1).unwrap().push(line.unwrap().to_string()));
+}
+
 // use only a subset of UMIs for downstream analysis, useful when working with high read depth
 // recommended --sample value for BAM files >1GB: 5000
 pub fn subsample(mut df: DataFrame, sample_size: usize) -> DataFrame {
@@ -59,15 +69,39 @@ pub fn subsample(mut df: DataFrame, sample_size: usize) -> DataFrame {
     return df;
 }
 
-pub fn write_report(dfs: Vec<DataFrame>, outfile: &Path) {
+pub fn write_report(dfs: Vec<DataFrame>, outfile: &Path, summarize: bool) {
     let mut file = File::create(outfile).expect("Could not create file!");
     let mut new_report = concat_df_horizontal(&dfs).unwrap();
     new_report.align_chunks();
+
+    if summarize {
+        new_report = sum_cols(new_report);
+    }
 
     CsvWriter::new(&mut file)
         .n_threads(8)
         .finish(&mut new_report)
         .unwrap();
+}
+
+// sum all edit distances across all recorded positions for genome-wide statistics
+pub fn sum_cols(mut df: DataFrame) -> DataFrame {
+    let mut col_names = df.get_column_names();
+    let mut positions = col_names;
+    positions.remove(0);
+
+    let sum = df
+        .select(positions)
+        .unwrap()
+        .sum_horizontal(polars::frame::NullStrategy::Ignore)
+        .unwrap()
+        .unwrap()
+        .rename("sum")
+        .clone();
+
+    df.with_column(sum).expect("Summing failed!");
+
+    return df;
 }
 
 pub fn get_mean(list: Vec<usize>) -> f32 {

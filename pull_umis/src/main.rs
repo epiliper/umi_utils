@@ -19,7 +19,7 @@ enum Output {
 #[command(term_width = 0)]
 struct Args {
     file: String,
-    #[arg(long = "sep")]
+    #[arg(long = "sep", default_value = ":")]
     separator: String,
 
     #[arg(long = "sample", default_value_t = 0)]
@@ -27,6 +27,9 @@ struct Args {
 
     #[arg(long = "stat")]
     output: Output,
+
+    #[arg(long = "sum")]
+    sum: bool,
 }
 
 fn main() {
@@ -34,17 +37,22 @@ fn main() {
     let input = args.file;
     let sample_size = args.sample_size;
 
-    let bam_file = BamReader::from_path(&input, 8).unwrap();
+    let mut umis: IndexMap<i32, Vec<String>> = IndexMap::new();
 
     let outfile = format!("{}{}", input.split('.').next().unwrap(), "_umis.csv").to_string();
     let outfile = Path::new(&outfile);
+
     let _ = File::create(outfile);
 
-    let mut umis: IndexMap<i32, Vec<String>> = IndexMap::new();
+    if input.ends_with(".bam") {
+        let bam_file = BamReader::from_path(&input, 8).unwrap();
 
-    for r in bam_file {
-        let read = &r.unwrap();
-        pull_umi(read, &mut umis, &args.separator)
+        for r in bam_file {
+            let read = &r.unwrap();
+            pull_umi(read, &mut umis, &args.separator)
+        }
+    } else if input.ends_with(".txt") {
+        pull_umis_txt(&Path::new(&input), &mut umis);
     }
 
     let process = match args.output {
@@ -53,5 +61,7 @@ fn main() {
         Output::Dist => extract_dist,
     };
 
-    process(umis, &outfile, sample_size);
+    let position_reports = process(umis, &outfile, sample_size);
+
+    write_report(position_reports, outfile, args.sum);
 }
