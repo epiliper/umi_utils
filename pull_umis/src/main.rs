@@ -44,16 +44,24 @@ fn main() {
 
     let _ = File::create(outfile);
 
+    let mut num_reads: i64 = 0;
+
     if input.ends_with(".bam") {
         let bam_file = BamReader::from_path(&input, 8).unwrap();
 
-        for r in bam_file {
-            let read = &r.unwrap();
-            pull_umi(read, &mut umis, &args.separator)
-        }
+        pull_umis_bam(bam_file, &mut umis, &args.separator, &mut num_reads);
     } else if input.ends_with(".txt") {
-        pull_umis_txt(&Path::new(&input), &mut umis);
+        pull_umis_txt(&Path::new(&input), &mut umis, &mut num_reads);
     }
+
+    println!("Processing {} reads...", num_reads);
+    match args.sample_size {
+        0 => println!("Subsampling: None"),
+        _ => println!(
+            "Subsampling: {} read barcodes per position",
+            args.sample_size
+        ),
+    };
 
     let process = match args.output {
         Output::Barcode => extract_umis,
@@ -63,5 +71,5 @@ fn main() {
 
     let position_reports = process(umis, &outfile, sample_size);
 
-    write_report(position_reports, outfile, args.sum);
+    write_report(position_reports, outfile, args.sum, num_reads);
 }

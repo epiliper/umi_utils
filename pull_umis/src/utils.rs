@@ -1,3 +1,4 @@
+use bam::BamReader;
 use bam::Record;
 use indexmap::IndexMap;
 use polars::frame::DataFrame;
@@ -26,28 +27,39 @@ fn get_umi(record: &Record, separator: &String) -> String {
 }
 
 // store UMI by position of associated read
-pub fn pull_umi(read: &Record, store: &mut IndexMap<i32, Vec<String>>, separator: &String) {
-    // if read is reverse to reference, group it by its last aligned base to the reference
-    if read.flag().is_mapped() && read.flag().is_reverse_strand() {
-        let pos = read.calculate_end() + 1;
-        store.entry(pos).or_insert(Vec::new());
-        store.get_mut(&pos).unwrap().push(get_umi(read, separator))
-    }
-    // otherwise, use its first position to reference
-    else if read.flag().is_mapped() {
-        let pos = read.start() + 1;
-        store.entry(pos).or_insert(Vec::new());
-        store.get_mut(&pos).unwrap().push(get_umi(read, separator))
+pub fn pull_umis_bam(
+    bam: BamReader<File>,
+    store: &mut IndexMap<i32, Vec<String>>,
+    separator: &String,
+    num_reads: &mut i64,
+) {
+    for r in bam {
+        let read = &r.unwrap();
+        // if read is reverse to reference, group it by its last aligned base to the reference
+        if read.flag().is_mapped() && read.flag().is_reverse_strand() {
+            let pos = read.calculate_end() + 1;
+            store.entry(pos).or_insert(Vec::new());
+            store.get_mut(&pos).unwrap().push(get_umi(read, separator));
+            *num_reads += 1;
+        }
+        // otherwise, use its first position to reference
+        else if read.flag().is_mapped() {
+            let pos = read.start() + 1;
+            store.entry(pos).or_insert(Vec::new());
+            store.get_mut(&pos).unwrap().push(get_umi(read, separator));
+            *num_reads += 1;
+        }
     }
 }
 
-pub fn pull_umis_txt(txt: &Path, store: &mut IndexMap<i32, Vec<String>>) {
+pub fn pull_umis_txt(txt: &Path, store: &mut IndexMap<i32, Vec<String>>, num_reads: &mut i64) {
     store.entry(1).or_insert(Vec::new());
 
     let file = File::open(txt).expect("unable to open txt file!");
-    BufReader::new(file)
-        .lines()
-        .for_each(|line| store.get_mut(&1).unwrap().push(line.unwrap().to_string()));
+    BufReader::new(file).lines().for_each(|line| {
+        store.get_mut(&1).unwrap().push(line.unwrap().to_string());
+        *num_reads += 1;
+    });
 }
 
 // use only a subset of UMIs for downstream analysis, useful when working with high read depth
@@ -69,7 +81,7 @@ pub fn subsample(mut df: DataFrame, sample_size: usize) -> DataFrame {
     return df;
 }
 
-pub fn write_report(dfs: Vec<DataFrame>, outfile: &Path, summarize: bool) {
+pub fn write_report(dfs: Vec<DataFrame>, outfile: &Path, summarize: bool, num_reads: i64) {
     let mut file = File::create(outfile).expect("Could not create file!");
     let mut new_report = concat_df_horizontal(&dfs).unwrap();
     new_report.align_chunks();
@@ -77,6 +89,10 @@ pub fn write_report(dfs: Vec<DataFrame>, outfile: &Path, summarize: bool) {
     if summarize {
         new_report = sum_cols(new_report);
     }
+
+    new_report
+        .with_column(Series::new("num_reads", [num_reads]))
+        .unwrap();
 
     CsvWriter::new(&mut file)
         .n_threads(8)
