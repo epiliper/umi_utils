@@ -15,12 +15,7 @@ use rand::SeedableRng;
 use indexmap::IndexMap;
 
 // write the UMI barcodes themselves to file, with one column for each reference coordinate
-pub fn extract_umis(
-    mut store: IndexMap<i32, Vec<String>>,
-    outfile: &Path,
-    sample_size: usize,
-) -> Vec<DataFrame> {
-    let mut file = File::create(outfile).expect("Could not create file!");
+pub fn extract_umis(mut store: IndexMap<i32, Vec<String>>, sample_size: usize) -> Vec<DataFrame> {
     let mut dfs: Vec<DataFrame> = Vec::new();
 
     for (pos, umis) in store.drain(0..) {
@@ -41,13 +36,8 @@ pub fn extract_umis(
 // write the mean edit distance to file. Mean is calculated per reference coordinate
 // Note that 1000 UMIs will generate ~500_000 edit distance values, so using --sample is
 // recommended
-pub fn extract_means(
-    mut store: IndexMap<i32, Vec<String>>,
-    outfile: &Path,
-    sample_size: usize,
-) -> Vec<DataFrame> {
-    let mut file = File::create(outfile).expect("Could not create file!");
-    let mut dfs: Arc<Mutex<Vec<DataFrame>>> = Arc::new(Mutex::new(Vec::new()));
+pub fn extract_means(mut store: IndexMap<i32, Vec<String>>, sample_size: usize) -> Vec<DataFrame> {
+    let dfs: Arc<Mutex<Vec<DataFrame>>> = Arc::new(Mutex::new(Vec::new()));
 
     store.par_drain(0..).for_each(|(pos, umi_list)| {
         let mut rng = StdRng::seed_from_u64(5);
@@ -90,12 +80,7 @@ pub fn extract_means(
 // write the frequency of edit distances 0-13 per reference coordinate.
 // Note that 1000 UMIs will generate ~500_000 edit distance values, so using --sample is
 // recommended
-pub fn extract_dist(
-    mut store: IndexMap<i32, Vec<String>>,
-    outfile: &Path,
-    sample_size: usize,
-) -> Vec<DataFrame> {
-    let mut file = File::create(outfile).expect("Could not create file!");
+pub fn extract_dist(mut store: IndexMap<i32, Vec<String>>, sample_size: usize) -> Vec<DataFrame> {
     let dfs: Arc<Mutex<Vec<DataFrame>>> = Arc::new(Mutex::new(Vec::new()));
 
     store.par_drain(0..).for_each(|(pos, umi_list)| {

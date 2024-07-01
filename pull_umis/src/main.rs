@@ -69,7 +69,7 @@ fn main() {
         Output::Dist => extract_dist,
     };
 
-    let position_reports = process(umis, &outfile, sample_size);
+    let position_reports = process(umis, sample_size);
 
     write_report(position_reports, outfile, args.sum, num_reads);
 }
