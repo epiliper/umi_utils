@@ -30,6 +30,9 @@ struct Args {
 
     #[arg(long = "sum")]
     sum: bool,
+
+    #[arg(long = "report_reads")]
+    get_read_num: bool,
 }
 
 fn main() {
@@ -39,7 +42,7 @@ fn main() {
 
     let mut umis: IndexMap<i32, Vec<String>> = IndexMap::new();
 
-    let outfile = format!("{}{}", input.split('.').next().unwrap(), "_umis.csv").to_string();
+    let outfile = format!("{}{}", input.rsplit_once('.').unwrap().0, "_umis.csv").to_string();
     let outfile = Path::new(&outfile);
 
     let _ = File::create(outfile);
@@ -71,5 +74,11 @@ fn main() {
 
     let position_reports = process(umis, sample_size);
 
-    write_report(position_reports, outfile, args.sum, num_reads);
+    write_report(
+        position_reports,
+        outfile,
+        args.get_read_num,
+        args.sum,
+        num_reads,
+    );
 }

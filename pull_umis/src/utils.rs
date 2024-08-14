@@ -81,18 +81,26 @@ pub fn subsample(mut df: DataFrame, sample_size: usize) -> DataFrame {
     return df;
 }
 
-pub fn write_report(dfs: Vec<DataFrame>, outfile: &Path, summarize: bool, num_reads: i64) {
+pub fn write_report(
+    dfs: Vec<DataFrame>,
+    outfile: &Path,
+    get_reads: bool,
+    summarize: bool,
+    num_reads: i64,
+) {
     let mut file = File::create(outfile).expect("Could not create file!");
     let mut new_report = concat_df_horizontal(&dfs).unwrap();
     new_report.align_chunks();
 
     if summarize {
-        new_report = sum_cols(new_report);
+        new_report = sum_cols(new_report, outfile);
     }
 
-    new_report
-        .with_column(Series::new("num_reads", [num_reads]))
-        .unwrap();
+    if get_reads {
+        new_report
+            .with_column(Series::new("num_reads", [num_reads]))
+            .unwrap();
+    }
 
     CsvWriter::new(&mut file)
         .n_threads(8)
@@ -101,10 +109,11 @@ pub fn write_report(dfs: Vec<DataFrame>, outfile: &Path, summarize: bool, num_re
 }
 
 // sum all edit distances across all recorded positions for genome-wide statistics
-pub fn sum_cols(mut df: DataFrame) -> DataFrame {
+pub fn sum_cols(mut df: DataFrame, outfile: &Path) -> DataFrame {
     let mut col_names = df.get_column_names();
     let mut positions = col_names;
     positions.remove(0);
+    let sample_name = outfile.to_str().unwrap().split("_umis.csv").next().unwrap();
 
     let sum = df
         .select(positions)
@@ -112,12 +121,14 @@ pub fn sum_cols(mut df: DataFrame) -> DataFrame {
         .sum_horizontal(polars::frame::NullStrategy::Ignore)
         .unwrap()
         .unwrap()
-        .rename("sum")
+        .rename(sample_name)
         .clone();
 
-    df.with_column(sum).expect("Summing failed!");
+    let summary = DataFrame::new(vec![sum]).unwrap();
 
-    return df;
+    // df.with_column(sum).expect("Summing failed!");
+
+    return summary;
 }
 
 pub fn get_mean(list: Vec<usize>) -> f32 {
