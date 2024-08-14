@@ -112,7 +112,6 @@ pub fn write_report(
 pub fn sum_cols(mut df: DataFrame, outfile: &Path) -> DataFrame {
     let mut col_names = df.get_column_names();
     let mut positions = col_names;
-    positions.remove(0);
     let sample_name = outfile.to_str().unwrap().split("_umis.csv").next().unwrap();
 
     let sum = df
@@ -124,7 +123,9 @@ pub fn sum_cols(mut df: DataFrame, outfile: &Path) -> DataFrame {
         .rename(sample_name)
         .clone();
 
-    let summary = DataFrame::new(vec![sum]).unwrap();
+    let edit_col = df.drop_in_place("edit").unwrap();
+
+    let summary = DataFrame::new(vec![edit_col, sum]).unwrap();
 
     // df.with_column(sum).expect("Summing failed!");
 
