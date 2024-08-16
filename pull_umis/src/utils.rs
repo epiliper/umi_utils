@@ -9,6 +9,28 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 // count the number of comparisons with edit distance of 0, 1, 2, etc.
+
+pub fn get_read_pos(read: &Record) -> Option<i32> {
+    if read.flag().is_reverse_strand() {
+        let mut start = read.calculate_end();
+
+        if !read.cigar().is_empty() {
+            // set end pos as start to group with forward-reads covering same region
+            start += read.cigar().soft_clipping(false) as i32; // pad with right-side soft clip
+            return Some(start);
+        }
+    } else {
+        let mut start = read.start();
+
+        if !read.cigar().is_empty() {
+            start -= read.cigar().soft_clipping(true) as i32; // pad with left-side soft clip
+            return Some(start);
+        }
+    };
+
+    return None;
+}
+
 pub fn get_dist(edits: &mut Vec<usize>) -> IndexMap<usize, i32> {
     let mut dist: IndexMap<usize, i32> = IndexMap::new();
 
@@ -36,17 +58,26 @@ pub fn pull_umis_bam(
     for r in bam {
         let read = &r.unwrap();
         // if read is reverse to reference, group it by its last aligned base to the reference
-        if read.flag().is_mapped() && read.flag().is_reverse_strand() {
-            let pos = read.calculate_end() + 1;
+        if read.flag().is_mapped() {
+            let pos = get_read_pos(read).expect("ERROR: mapped read does not have CIGAR string!");
             store.entry(pos).or_insert(Vec::new());
             store.get_mut(&pos).unwrap().push(get_umi(read, separator));
             *num_reads += 1;
         }
-        // otherwise, use its first position to reference
-        else if read.flag().is_mapped() {
-            let pos = read.start() + 1;
-            store.entry(pos).or_insert(Vec::new());
-            store.get_mut(&pos).unwrap().push(get_umi(read, separator));
+    }
+}
+
+pub fn pull_umis_unsorted_bam(
+    bam: BamReader<File>,
+    store: &mut IndexMap<i32, Vec<String>>,
+    separator: &String,
+    num_reads: &mut i64,
+) {
+    for r in bam {
+        let read = &r.unwrap();
+        if read.flag().is_mapped() {
+            store.entry(0).or_insert(Vec::new());
+            store.get_mut(&0).unwrap().push(get_umi(read, separator));
             *num_reads += 1;
         }
     }
@@ -111,24 +142,24 @@ pub fn write_report(
 // sum all edit distances across all recorded positions for genome-wide statistics
 pub fn sum_cols(mut df: DataFrame, outfile: &Path) -> DataFrame {
     let mut col_names = df.get_column_names();
-    let mut positions = col_names;
+    col_names.remove(0); // remove "edit" column from summing
+
     let sample_name = outfile.to_str().unwrap().split("_umis.csv").next().unwrap();
 
     let sum = df
-        .select(positions)
+        .select(col_names)
         .unwrap()
         .sum_horizontal(polars::frame::NullStrategy::Ignore)
         .unwrap()
         .unwrap()
         .rename(sample_name)
-        .clone();
+        .clone()
+        .fill_null(FillNullStrategy::Zero)
+        .unwrap();
 
     let edit_col = df.drop_in_place("edit").unwrap();
 
     let summary = DataFrame::new(vec![edit_col, sum]).unwrap();
-
-    // df.with_column(sum).expect("Summing failed!");
-
     return summary;
 }
 

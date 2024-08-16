@@ -52,7 +52,10 @@ fn main() {
     if input.ends_with(".bam") {
         let bam_file = BamReader::from_path(&input, 8).unwrap();
 
-        pull_umis_bam(bam_file, &mut umis, &args.separator, &mut num_reads);
+        match args.sum {
+            false => pull_umis_bam(bam_file, &mut umis, &args.separator, &mut num_reads),
+            true => pull_umis_unsorted_bam(bam_file, &mut umis, &args.separator, &mut num_reads),
+        }
     } else if input.ends_with(".txt") {
         pull_umis_txt(&Path::new(&input), &mut umis, &mut num_reads);
     }
